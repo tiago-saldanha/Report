@@ -1,4 +1,5 @@
 ﻿using Microsoft.AspNetCore.Mvc;
+using Report.API.Models.InputModels;
 using Report.API.Services;
 
 namespace Report.API.Endpoints;
@@ -18,6 +19,9 @@ public static class ReportEndpoints
 
         group.MapGet("/stock-out", GetStockOut)
              .WithName("GetStockOut");
+
+        group.MapPost("/calculate-snapshot", PostCalculateSnaphot)
+            .WithName("CalculateSnaphot");
     }
 
     private static async Task<IResult> ListCollections(
@@ -36,12 +40,12 @@ public static class ReportEndpoints
         [FromServices] ReportApplicationService service,
         CancellationToken cancellationToken)
     {
-        var entradas = await service.GetStockInAsync(produtoId, page, pageSize, cancellationToken);
+        var stockIn = await service.GetStockInAsync(produtoId, page, pageSize, cancellationToken);
 
-        if (entradas is null)
+        if (stockIn is null)
             return Results.NotFound();
 
-        return Results.Ok(entradas);
+        return Results.Ok(stockIn);
     }
 
     private static async Task<IResult> GetStockOut(
@@ -51,11 +55,20 @@ public static class ReportEndpoints
         [FromServices] ReportApplicationService service,
         CancellationToken cancellationToken)
     {
-        var saidas = await service.GetStockOutAsync(produtoId, page, pageSize, cancellationToken);
+        var stockOut = await service.GetStockOutAsync(produtoId, page, pageSize, cancellationToken);
 
-        if (saidas is null)
+        if (stockOut is null)
             return Results.NotFound();
 
-        return Results.Ok(saidas);
+        return Results.Ok(stockOut);
+    }
+
+    private static async Task<IResult> PostCalculateSnaphot(
+        [FromBody] CalculateSnaphotInputModel model,
+        [FromServices] SnapshotApplicationService service,
+        CancellationToken cancellationToken)
+    {
+        var snapshot = await service.CalulateInventorySnapshotAsync(model, cancellationToken);
+        return Results.Ok(snapshot);
     }
 }

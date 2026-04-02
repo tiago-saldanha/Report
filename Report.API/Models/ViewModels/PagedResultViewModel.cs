@@ -1,5 +1,5 @@
-﻿namespace Report.API.Models;
-public class PagedResult<T>
+﻿namespace Report.API.Models.ViewModels;
+public class PagedResultViewModel<T>
 {
     public IEnumerable<T> Items { get; set; } = [];
     public long Count { get; set; }

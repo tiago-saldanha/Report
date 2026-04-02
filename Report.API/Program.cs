@@ -7,6 +7,7 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddSingleton<ReportRepository>();
 builder.Services.AddScoped<ReportApplicationService>();
+builder.Services.AddScoped<SnapshotApplicationService>();
 builder.Services.AddOpenApi();
 
 var app = builder.Build();
