@@ -6,7 +6,8 @@ namespace Report.API.Services;
 
 public class ReportApplicationService(ReportRepository repository, ILogger<ReportApplicationService> logger)
 {
-    public async Task<IEnumerable<string>> ListCollectionsAsync(CancellationToken cancellationToken)
+    public async Task<IEnumerable<string>> ListCollectionsAsync(
+        CancellationToken cancellationToken)
         => await repository.ListCollectionsAsync(cancellationToken);
 
     public async Task<PagedResultViewModel<StockIn>> GetStockInAsync(

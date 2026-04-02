@@ -7,16 +7,14 @@ namespace Report.API.Repository;
 
 public class ReportRepository
 {
-    private readonly string _uri = "mongodb://localhost:27017";
-    private readonly string _databaseName = "database";
     private readonly MongoClient _client;
     private readonly IMongoDatabase _database;
     private readonly ILogger<ReportRepository> _logger;
 
     public ReportRepository(ILogger<ReportRepository> logger)
     {
-        _client = new MongoClient(_uri);
-        _database = _client.GetDatabase(_databaseName, new MongoDatabaseSettings());
+        _client = new MongoClient("mongodb://localhost:27017");
+        _database = _client.GetDatabase("database");
         _logger = logger;
     }
 
@@ -50,11 +48,8 @@ public class ReportRepository
             .ToListAsync(cancellationToken);
 
         _logger.LogInformation(
-            "Retrieved {Count} items for produtoId {ProdutoId} on page {Page} with page size {PageSize}",
-            items.Count, 
-            produtoId, 
-            page, 
-            pageSize);
+            "Retrieved {Count} StockIn items for produtoId {ProdutoId} (page {Page})",
+            items.Count, produtoId, page);
 
         return new PagedResultViewModel<StockIn>
         {
@@ -85,11 +80,8 @@ public class ReportRepository
             .ToListAsync(cancellationToken);
 
         _logger.LogInformation(
-            "Retrieved {Count} items for produtoId {ProdutoId} on page {Page} with page size {PageSize}",
-            items.Count, 
-            produtoId, 
-            page, 
-            pageSize);
+            "Retrieved {Count} StockOut items for produtoId {ProdutoId} (page {Page})",
+            items.Count, produtoId, page);
 
         return new PagedResultViewModel<StockOut>
         {
@@ -100,29 +92,29 @@ public class ReportRepository
         };
     }
 
-    public async Task<List<InventoryBalanceResultViewModel>> CalulateInventorySnapshotAsync(
+    public async Task<List<InventoryBalanceResultViewModel>> CalculateInventorySnapshotAsync(
         List<string> productIds,
         List<string> stockIds,
-        DateTime initalDate,
+        DateTime initialDate,
         DateTime finalDate,
         CancellationToken cancellationToken)
     {
         var collectionStockIn = _database.GetCollection<BsonDocument>(nameof(StockIn));
 
-        var defaultFilter = new BsonDocument
+        var filter = new BsonDocument
         {
             { "ProdutoID", new BsonDocument("$in", new BsonArray(productIds)) },
             { "DepositoID", new BsonDocument("$in", new BsonArray(stockIds)) },
             { "Data", new BsonDocument {
-                { "$gte", initalDate },
+                { "$gte", initialDate },
                 { "$lte", finalDate }
             }}
         };
 
         var pipeline = new List<BsonDocument>
-        { 
-            // 1. StockIn
-            new BsonDocument("$match", defaultFilter),
+        {
+            // StockIn
+            new BsonDocument("$match", filter),
 
             new BsonDocument("$project", new BsonDocument
             {
@@ -132,13 +124,13 @@ public class ReportRepository
                 { "Tipo", new BsonDocument("$literal", "E") },
             }),
 
-            // 2. Union With Stock Out
+            // Union with StockOut
             new BsonDocument("$unionWith", new BsonDocument
             {
-                { "coll", "StockOut" },
+                { "coll", nameof(StockOut) },
                 { "pipeline", new BsonArray
                     {
-                        new BsonDocument("$match", defaultFilter),
+                        new BsonDocument("$match", filter),
                         new BsonDocument("$project", new BsonDocument
                         {
                             { "ProdutoID", 1 },
@@ -150,7 +142,7 @@ public class ReportRepository
                 }
             }),
 
-            // 3. Group (stock)
+            // Group
             new BsonDocument("$group", new BsonDocument
             {
                 {
@@ -172,7 +164,7 @@ public class ReportRepository
                 }
             }),
 
-            // 4. Flatten
+            // Flatten
             new BsonDocument("$project", new BsonDocument
             {
                 { "_id", 0 },
@@ -187,5 +179,48 @@ public class ReportRepository
             .ToListAsync(cancellationToken);
 
         return result;
+    }
+
+    public async Task<List<InventorySnapshot>> GetLatestSnapshotsAsync(
+        List<string> productIds,
+        List<string> stockIds,
+        DateTime referenceDate,
+        CancellationToken cancellationToken)
+    {
+        var collection = _database.GetCollection<InventorySnapshot>(nameof(InventorySnapshot));
+
+        var filter = Builders<InventorySnapshot>.Filter.And(
+            Builders<InventorySnapshot>.Filter.In(x => x.ProdutoId, productIds),
+            Builders<InventorySnapshot>.Filter.In(x => x.DepositoId, stockIds),
+            Builders<InventorySnapshot>.Filter.Lte(x => x.DataFechamento, referenceDate)
+        );
+
+        var snapshots = await collection
+            .Find(filter)
+            .SortByDescending(x => x.DataFechamento)
+            .ToListAsync(cancellationToken);
+
+        return snapshots
+            .GroupBy(x => new { x.ProdutoId, x.DepositoId })
+            .Select(g => g.First())
+            .ToList();
+    }
+
+    public async Task InsertManyInventorySnapshotAsync(
+        IEnumerable<InventorySnapshot> snapshots,
+        CancellationToken cancellationToken)
+    {
+        var list = snapshots.ToList();
+
+        if (!list.Any())
+            return;
+
+        var collection = _database.GetCollection<InventorySnapshot>(nameof(InventorySnapshot));
+
+        await collection.InsertManyAsync(list, cancellationToken: cancellationToken);
+
+        _logger.LogInformation(
+            "Inserted {Count} inventory snapshots",
+            list.Count);
     }
 }

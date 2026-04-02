@@ -11,5 +11,5 @@ public class InventorySnapshot : EntityLastUpdate
     public int Ano { get; set; }
     public int Mes { get; set; }
     public double Saldo { get; set; }
-    public DateOnly DataFechamento { get; set; }
+    public DateTime DataFechamento { get; set; }
 }

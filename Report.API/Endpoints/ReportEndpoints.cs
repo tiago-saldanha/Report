@@ -20,8 +20,8 @@ public static class ReportEndpoints
         group.MapGet("/stock-out", GetStockOut)
              .WithName("GetStockOut");
 
-        group.MapPost("/calculate-snapshot", PostCalculateSnaphot)
-            .WithName("CalculateSnaphot");
+        group.MapPost("/get-or-create-snapshot", PostGetOrCreateSnapshot)
+            .WithName("GetOrCreateSnapshot");
     }
 
     private static async Task<IResult> ListCollections(
@@ -29,7 +29,6 @@ public static class ReportEndpoints
         CancellationToken cancellationToken)
     {
         var collections = await service.ListCollectionsAsync(cancellationToken);
-
         return Results.Ok(new { Collections = collections });
     }
 
@@ -63,12 +62,12 @@ public static class ReportEndpoints
         return Results.Ok(stockOut);
     }
 
-    private static async Task<IResult> PostCalculateSnaphot(
+    private static async Task<IResult> PostGetOrCreateSnapshot(
         [FromBody] CalculateSnaphotInputModel model,
         [FromServices] SnapshotApplicationService service,
         CancellationToken cancellationToken)
     {
-        var snapshot = await service.CalulateInventorySnapshotAsync(model, cancellationToken);
-        return Results.Ok(snapshot);
+        var result = await service.GetInventoryBalanceAsync(model, cancellationToken);
+        return Results.Ok(result);
     }
 }
