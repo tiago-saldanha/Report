@@ -1,7 +1,9 @@
-﻿using Report.API.Abstract;
+﻿using MongoDB.Bson.Serialization.Attributes;
+using Report.API.Abstract;
 
 namespace Report.API.Entity;
 
+[BsonIgnoreExtraElements]
 public class StockIn : EntityLastUpdate
 {
     public int CodigoProduto { get; set; }

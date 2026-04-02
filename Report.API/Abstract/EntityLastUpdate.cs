@@ -3,7 +3,6 @@ using MongoDB.Bson.Serialization.Attributes;
 
 namespace Report.API.Abstract;
 
-[BsonIgnoreExtraElements]
 public abstract class EntityLastUpdate
 {
     [BsonId]
