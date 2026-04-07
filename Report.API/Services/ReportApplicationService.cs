@@ -11,13 +11,13 @@ public class ReportApplicationService(ReportRepository repository, ILogger<Repor
         => await repository.ListCollectionsAsync(cancellationToken);
 
     public async Task<PagedResultViewModel<StockIn>> GetStockInAsync(
-        string produtoId, 
+        string productId, 
         int page, 
         int pageSize,
         CancellationToken cancellationToken)
     {
         var pagedResult = await repository.GetStockInAsync(
-            produtoId, 
+            productId, 
             page, 
             pageSize, 
             cancellationToken);
@@ -25,7 +25,7 @@ public class ReportApplicationService(ReportRepository repository, ILogger<Repor
         logger.LogInformation(
             "Retrieved {Count} entries for product {ProdutoId} on page {Page} with page size {PageSize}.",
             pagedResult.Count, 
-            produtoId, 
+            productId, 
             page, 
             pageSize);
 
@@ -33,13 +33,13 @@ public class ReportApplicationService(ReportRepository repository, ILogger<Repor
     }
 
     public async Task<PagedResultViewModel<StockOut>> GetStockOutAsync(
-        string produtoId,
+        string productId,
         int page,
         int pageSize,
         CancellationToken cancellationToken)
     {
         var pagedResult = await repository.GetStockOutAsync(
-            produtoId,
+            productId,
             page,
             pageSize,
             cancellationToken);
@@ -47,7 +47,7 @@ public class ReportApplicationService(ReportRepository repository, ILogger<Repor
         logger.LogInformation(
             "Retrieved {Count} entries for product {ProdutoId} on page {Page} with page size {PageSize}.",
             pagedResult.Count,
-            produtoId,
+            productId,
             page,
             pageSize);
 

@@ -1,4 +1,5 @@
-﻿using MongoDB.Bson;
+﻿using Microsoft.AspNetCore.Mvc.RazorPages;
+using MongoDB.Bson;
 using MongoDB.Driver;
 using Report.API.Entity;
 using Report.API.Models.ViewModels;
@@ -29,14 +30,13 @@ public class ReportRepository
     }
 
     public async Task<PagedResultViewModel<StockIn>> GetStockInAsync(
-        string produtoId,
+        string productId,
         int page,
         int pageSize,
         CancellationToken cancellationToken)
     {
         var collection = _database.GetCollection<StockIn>(nameof(StockIn));
-
-        var filter = Builders<StockIn>.Filter.Eq(x => x.ProdutoID, produtoId);
+        var filter = Builders<StockIn>.Filter.Eq(x => x.ProdutoID, productId);
 
         var totalCount = await collection.CountDocumentsAsync(filter, cancellationToken: cancellationToken);
 
@@ -49,7 +49,7 @@ public class ReportRepository
 
         _logger.LogInformation(
             "Retrieved {Count} StockIn items for produtoId {ProdutoId} (page {Page})",
-            items.Count, produtoId, page);
+            items.Count, productId, page);
 
         return new PagedResultViewModel<StockIn>
         {
@@ -61,14 +61,13 @@ public class ReportRepository
     }
 
     public async Task<PagedResultViewModel<StockOut>> GetStockOutAsync(
-        string produtoId,
+        string productId,
         int page,
         int pageSize,
         CancellationToken cancellationToken)
     {
         var collection = _database.GetCollection<StockOut>(nameof(StockOut));
-
-        var filter = Builders<StockOut>.Filter.Eq(x => x.ProdutoID, produtoId);
+        var filter = Builders<StockOut>.Filter.Eq(x => x.ProdutoID, productId);
 
         var totalCount = await collection.CountDocumentsAsync(filter, cancellationToken: cancellationToken);
 
@@ -81,7 +80,7 @@ public class ReportRepository
 
         _logger.LogInformation(
             "Retrieved {Count} StockOut items for produtoId {ProdutoId} (page {Page})",
-            items.Count, produtoId, page);
+            items.Count, productId, page);
 
         return new PagedResultViewModel<StockOut>
         {
@@ -113,9 +112,7 @@ public class ReportRepository
 
         var pipeline = new List<BsonDocument>
         {
-            // StockIn
             new BsonDocument("$match", filter),
-
             new BsonDocument("$project", new BsonDocument
             {
                 { "ProdutoID", 1 },
@@ -123,8 +120,6 @@ public class ReportRepository
                 { "Quantidade", 1 },
                 { "Tipo", new BsonDocument("$literal", "E") },
             }),
-
-            // Union with StockOut
             new BsonDocument("$unionWith", new BsonDocument
             {
                 { "coll", nameof(StockOut) },
@@ -141,8 +136,6 @@ public class ReportRepository
                     }
                 }
             }),
-
-            // Group
             new BsonDocument("$group", new BsonDocument
             {
                 {
@@ -163,8 +156,6 @@ public class ReportRepository
                     )
                 }
             }),
-
-            // Flatten
             new BsonDocument("$project", new BsonDocument
             {
                 { "_id", 0 },
@@ -174,11 +165,9 @@ public class ReportRepository
             })
         };
 
-        var result = await collectionStockIn
+        return await collectionStockIn
             .Aggregate<InventoryBalanceResultViewModel>(pipeline, cancellationToken: cancellationToken)
             .ToListAsync(cancellationToken);
-
-        return result;
     }
 
     public async Task<List<InventorySnapshot>> GetLatestSnapshotsAsync(
@@ -206,21 +195,59 @@ public class ReportRepository
             .ToList();
     }
 
-    public async Task InsertManyInventorySnapshotAsync(
+    public IAsyncCursor<Product> GetProductsAsync(
+        CancellationToken cancellationToken)
+    {
+        var collection = _database.GetCollection<Product>(nameof(Product));
+        return collection.FindSync<Product>(FilterDefinition<Product>.Empty, cancellationToken: cancellationToken);
+    }
+
+    public async Task UpsertInventorySnapshotsAsync(
         IEnumerable<InventorySnapshot> snapshots,
         CancellationToken cancellationToken)
     {
-        var list = snapshots.ToList();
+        try
+        {
+            if (snapshots == null || !snapshots.Any())
+                return;
 
-        if (!list.Any())
-            return;
+            var collection = _database.GetCollection<InventorySnapshot>(nameof(InventorySnapshot));
 
-        var collection = _database.GetCollection<InventorySnapshot>(nameof(InventorySnapshot));
+            var models = snapshots.Select(snapshot =>
+            {
+                var filter = Builders<InventorySnapshot>.Filter.And(
+                    Builders<InventorySnapshot>.Filter.Eq(x => x.ProdutoId, snapshot.ProdutoId),
+                    Builders<InventorySnapshot>.Filter.Eq(x => x.DepositoId, snapshot.DepositoId),
+                    Builders<InventorySnapshot>.Filter.Eq(x => x.DataFechamento, snapshot.DataFechamento)
+                );
 
-        await collection.InsertManyAsync(list, cancellationToken: cancellationToken);
+                var update = Builders<InventorySnapshot>.Update
+                    .Set(x => x.Saldo, snapshot.Saldo)
+                    .Set(x => x.Ano, snapshot.Ano)
+                    .Set(x => x.Mes, snapshot.Mes)
+                    .Set(x => x.UpdatedAt, DateTime.UtcNow)
+                    .SetOnInsert(x => x.ProdutoId, snapshot.ProdutoId)
+                    .SetOnInsert(x => x.DepositoId, snapshot.DepositoId)
+                    .SetOnInsert(x => x.DataFechamento, snapshot.DataFechamento);
 
-        _logger.LogInformation(
-            "Inserted {Count} inventory snapshots",
-            list.Count);
+                return new UpdateOneModel<InventorySnapshot>(filter, update)
+                {
+                    IsUpsert = true
+                };
+            }).ToList();
+
+            await collection.BulkWriteAsync(models, new BulkWriteOptions
+            {
+                IsOrdered = false
+            }, cancellationToken);
+
+            _logger.LogInformation(
+                "Insert InventorySnapshot: {count}",
+                models.Count);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error to upsert Snapshots: {message}", ex.Message);
+        }
     }
 }

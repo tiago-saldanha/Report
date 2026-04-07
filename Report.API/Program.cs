@@ -1,15 +1,16 @@
-using Report.API.Services;
 using Report.API.Endpoints;
-using Scalar.AspNetCore;
 using Report.API.Repository;
+using Report.API.Services;
+using Report.API.Workers;
+using Scalar.AspNetCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddSingleton<ReportRepository>();
 builder.Services.AddScoped<ReportApplicationService>();
-builder.Services.AddScoped<SnapshotApplicationService>();
+builder.Services.AddSingleton<SnapshotApplicationService>();
+builder.Services.AddHostedService<SnapshotWorkerService>();
 builder.Services.AddOpenApi();
-
 var app = builder.Build();
 
 if (app.Environment.IsDevelopment())

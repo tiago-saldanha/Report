@@ -8,5 +8,5 @@ public abstract class EntityLastUpdate
     [BsonId]
     [BsonRepresentation(BsonType.ObjectId)]
     public string Id { get; set; }
-    public DateTime LastUpdate { get; set; }
+    public DateTime UpdatedAt { get; set; }
 }

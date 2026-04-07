@@ -33,13 +33,13 @@ public static class ReportEndpoints
     }
 
     private static async Task<IResult> GetStockIn(
-        [FromQuery] string produtoId,
+        [FromQuery] string productId,
         [FromQuery] int page,
         [FromQuery] int pageSize,
         [FromServices] ReportApplicationService service,
         CancellationToken cancellationToken)
     {
-        var stockIn = await service.GetStockInAsync(produtoId, page, pageSize, cancellationToken);
+        var stockIn = await service.GetStockInAsync(productId, page, pageSize, cancellationToken);
 
         if (stockIn is null)
             return Results.NotFound();
@@ -48,13 +48,13 @@ public static class ReportEndpoints
     }
 
     private static async Task<IResult> GetStockOut(
-        [FromQuery] string produtoId,
+        [FromQuery] string productId,
         [FromQuery] int page,
         [FromQuery] int pageSize,
         [FromServices] ReportApplicationService service,
         CancellationToken cancellationToken)
     {
-        var stockOut = await service.GetStockOutAsync(produtoId, page, pageSize, cancellationToken);
+        var stockOut = await service.GetStockOutAsync(productId, page, pageSize, cancellationToken);
 
         if (stockOut is null)
             return Results.NotFound();
