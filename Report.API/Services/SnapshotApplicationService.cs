@@ -10,20 +10,23 @@ public class SnapshotApplicationService(
     ReportRepository repository,
     ILogger<SnapshotApplicationService> logger)
 {
+    private readonly SemaphoreSlim _semaphore = new(initialCount: Environment.ProcessorCount, maxCount: Environment.ProcessorCount);
+    private const int _pageSize = 1000;
+
     public async Task<List<InventoryBalanceResultViewModel>> GetInventoryBalanceAsync(
-        CalculateSnaphotInputModel model,
+        ProductBalanceInputModel model,
         CancellationToken cancellationToken)
     {
         var snapshots = await GetOrCreateSnapshotsAsync(
             model.ProductIds,
             model.StockIds,
-            model.InitalDate,
+            model.FinalDate,
             cancellationToken);
 
         var delta = await repository.CalculateInventorySnapshotAsync(
             model.ProductIds,
             model.StockIds,
-            model.InitalDate,
+            model.FinalDate,
             model.FinalDate,
             cancellationToken);
 
@@ -75,7 +78,7 @@ public class SnapshotApplicationService(
             .Where(x => !existingKeys.Contains($"{x.ProdutoId}_{x.DepositoId}"))
             .ToList();
 
-        if (!missing.Any())
+        if (missing.Count == 0)
             return existingSnapshots;
 
         var closingDate = referenceDate.AddMilliseconds(-1);
@@ -97,7 +100,7 @@ public class SnapshotApplicationService(
             Mes = closingDate.Month
         }).ToList();
 
-        if (newSnapshots.Any())
+        if (newSnapshots.Count != 0)
         {
             await repository.UpsertInventorySnapshotsAsync(newSnapshots, cancellationToken);
             logger.LogInformation("Created {Count} new missing snapshots.", newSnapshots.Count);
@@ -106,59 +109,75 @@ public class SnapshotApplicationService(
         return existingSnapshots.Concat(newSnapshots).ToList();
     }
 
-    public async Task GenerateSnapshotsAsync(
+    public async Task GenerateAllSnapshotsAsync(
         CancellationToken cancellationToken)
     {
         using var cursor = repository.GetProductsAsync(cancellationToken);
 
+        var options = new ParallelOptions 
+        { 
+            MaxDegreeOfParallelism = Environment.ProcessorCount
+        };
+
         while (await cursor.MoveNextAsync(cancellationToken))
         {
-            foreach (var product in cursor.Current)
+            await Parallel.ForEachAsync(cursor.Current, options, async (product, ct) =>
             {
-                try
-                {
-                    var stockInTask = GetStockInsAsync(product, cancellationToken);
-                    var stockOutTask = GetStockOutsAsync(product, cancellationToken);
-
-                    await Task.WhenAll(stockInTask, stockOutTask);
-
-                    var stockIns = await stockInTask;
-                    var stockOuts = await stockOutTask;
-
-                    var depositIds = stockIns.Select(x => x.DepositoID)
-                        .Union(stockOuts.Select(x => x.DepositoID))
-                        .Distinct();
-
-                    await Parallel.ForEachAsync(depositIds, async (depId, CancellationToken) =>
-                    {
-                        var filteredIns = stockIns.Where(x => x.DepositoID == depId).ToList();
-                        var filteredOuts = stockOuts.Where(x => x.DepositoID == depId).ToList();
-
-                        var snapshots = CalculateSnapshots(product.Id, depId, filteredIns, filteredOuts);
-
-                        if (snapshots.Any())
-                        {
-                            await repository.UpsertInventorySnapshotsAsync(snapshots, cancellationToken);
-                        }
-                    });
-                }
-                catch (Exception ex)
-                {
-                    logger.LogError(ex, "Error processing product {ProductId}", product.Id);
-                }
-            }
+                await CreateSnapshotAsync(product, options, ct);
+            });
         }
     }
 
-    private List<InventorySnapshot> CalculateSnapshots(
-        string produtoId,
-        string depositoId,
-        List<StockIn> allStockIns,
-        List<StockOut> allStockOuts)
+    private async Task CreateSnapshotAsync(
+        Product product,
+        ParallelOptions options,
+        CancellationToken cancellationToken)
     {
-        var allMovements = allStockIns
+        try
+        {
+            var stockIns = await GetStockInsAsync(product, cancellationToken);
+            var stockOuts = await GetStockOutsAsync(product, cancellationToken);
+
+            var depositIds = stockIns.Select(x => x.DepositoID)
+                .Union(stockOuts.Select(x => x.DepositoID))
+                .Distinct();
+
+            await Parallel.ForEachAsync(depositIds, options, async (depositId, ct) =>
+            {
+                var snapshots = CalculateSnapshots(product.Id, depositId, stockIns, stockOuts);
+
+                if (snapshots.Count != 0)
+                {
+                    await _semaphore.WaitAsync(ct);
+                    try
+                    {
+                        await repository.UpsertInventorySnapshotsAsync(snapshots, ct);
+                    }
+                    finally
+                    {
+                        _semaphore.Release();
+                    }
+                }
+            });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error processing product {ProductId}", product.Id);
+        }
+    }
+
+    private static List<InventorySnapshot> CalculateSnapshots(
+        string productId,
+        string depositId,
+        IEnumerable<StockIn> allStockIns,
+        IEnumerable<StockOut> allStockOuts)
+    {
+        var filteredIns = allStockIns.Where(x => x.DepositoID == depositId);
+        var filteredOuts = allStockOuts.Where(x => x.DepositoID == depositId);
+
+        var allMovements = filteredIns
             .Select(i => new { i.Data, Quantidade = (double)i.Quantidade })
-            .Concat(allStockOuts.Select(o => new { o.Data, Quantidade = (double)-o.Quantidade }));
+            .Concat(filteredOuts.Select(o => new { o.Data, Quantidade = (double)-o.Quantidade }));
 
         var monthlyGroups = allMovements
             .GroupBy(x => new { x.Data.Year, x.Data.Month })
@@ -174,19 +193,19 @@ public class SnapshotApplicationService(
             .ToList();
 
         var snapshots = new List<InventorySnapshot>();
-        double saldoAcumulado = 0;
+        var accumulatedBalance = 0d;
 
         foreach (var group in monthlyGroups)
         {
-            saldoAcumulado += group.VariacaoMensal;
+            accumulatedBalance += group.VariacaoMensal;
 
             snapshots.Add(new InventorySnapshot
             {
-                ProdutoId = produtoId,
-                DepositoId = depositoId,
+                ProdutoId = productId,
+                DepositoId = depositId,
                 Ano = group.Year,
                 Mes = group.Month,
-                Saldo = saldoAcumulado,
+                Saldo = accumulatedBalance,
                 DataFechamento = group.DataFechamento,
             });
         }
@@ -199,13 +218,12 @@ public class SnapshotApplicationService(
         CancellationToken cancellationToken)
     {
         var page = 1;
-        const int pageSize = 1000;
         var allItems = new List<StockIn>();
 
         PagedResultViewModel<StockIn> result;
         do
         {
-            result = await repository.GetStockInAsync(product.Id, page, pageSize, cancellationToken);
+            result = await repository.GetStockInAsync(product.Id, page, _pageSize, cancellationToken);
             if (result.Items == null || !result.Items.Any()) break;
 
             allItems.AddRange(result.Items);
@@ -220,13 +238,12 @@ public class SnapshotApplicationService(
         CancellationToken cancellationToken)
     {
         var page = 1;
-        const int pageSize = 1000;
         var allItems = new List<StockOut>();
 
         PagedResultViewModel<StockOut> result;
         do
         {
-            result = await repository.GetStockOutAsync(product.Id, page, pageSize, cancellationToken);
+            result = await repository.GetStockOutAsync(product.Id, page, _pageSize, cancellationToken);
             if (result.Items == null || !result.Items.Any()) break;
 
             allItems.AddRange(result.Items);

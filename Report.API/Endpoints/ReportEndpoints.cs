@@ -20,8 +20,8 @@ public static class ReportEndpoints
         group.MapGet("/stock-out", GetStockOut)
              .WithName("GetStockOut");
 
-        group.MapPost("/get-or-create-snapshot", PostGetOrCreateSnapshot)
-            .WithName("GetOrCreateSnapshot");
+        group.MapPost("/inventory-balance", GetInventoryBalance)
+            .WithName("GetInventoryBalance");
     }
 
     private static async Task<IResult> ListCollections(
@@ -62,12 +62,12 @@ public static class ReportEndpoints
         return Results.Ok(stockOut);
     }
 
-    private static async Task<IResult> PostGetOrCreateSnapshot(
-        [FromBody] CalculateSnaphotInputModel model,
+    private static async Task<IResult> GetInventoryBalance(
+        [FromBody] ProductBalanceInputModel model,
         [FromServices] SnapshotApplicationService service,
         CancellationToken cancellationToken)
     {
-        var result = await service.GetInventoryBalanceAsync(model, cancellationToken);
-        return Results.Ok(result);
+        var results = await service.GetInventoryBalanceAsync(model, cancellationToken);
+        return Results.Ok(results);
     }
 }

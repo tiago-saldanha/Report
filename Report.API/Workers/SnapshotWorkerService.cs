@@ -11,7 +11,7 @@ public class SnapshotWorkerService(
     {
         logger.LogInformation("SnapshotWorkerService started");
 
-        await service.GenerateSnapshotsAsync(stoppingToken);
+        await service.GenerateAllSnapshotsAsync(stoppingToken);
 
         logger.LogInformation("SnapshotWorkerService stoped");
     }

@@ -1,4 +1,5 @@
 ﻿using Report.API.Entity;
+using Report.API.Models.InputModels;
 using Report.API.Models.ViewModels;
 using Report.API.Repository;
 

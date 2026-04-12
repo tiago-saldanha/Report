@@ -112,15 +112,15 @@ public class ReportRepository
 
         var pipeline = new List<BsonDocument>
         {
-            new BsonDocument("$match", filter),
-            new BsonDocument("$project", new BsonDocument
+            new("$match", filter),
+            new("$project", new BsonDocument
             {
                 { "ProdutoID", 1 },
                 { "DepositoID", 1 },
                 { "Quantidade", 1 },
                 { "Tipo", new BsonDocument("$literal", "E") },
             }),
-            new BsonDocument("$unionWith", new BsonDocument
+            new("$unionWith", new BsonDocument
             {
                 { "coll", nameof(StockOut) },
                 { "pipeline", new BsonArray
@@ -136,7 +136,7 @@ public class ReportRepository
                     }
                 }
             }),
-            new BsonDocument("$group", new BsonDocument
+            new("$group", new BsonDocument
             {
                 {
                     "_id", new BsonDocument
@@ -156,7 +156,7 @@ public class ReportRepository
                     )
                 }
             }),
-            new BsonDocument("$project", new BsonDocument
+            new("$project", new BsonDocument
             {
                 { "_id", 0 },
                 { "ProdutoID", "$_id.ProdutoID" },
@@ -173,7 +173,7 @@ public class ReportRepository
     public async Task<List<InventorySnapshot>> GetLatestSnapshotsAsync(
         List<string> productIds,
         List<string> stockIds,
-        DateTime referenceDate,
+        DateTime closingDate,
         CancellationToken cancellationToken)
     {
         var collection = _database.GetCollection<InventorySnapshot>(nameof(InventorySnapshot));
@@ -181,7 +181,7 @@ public class ReportRepository
         var filter = Builders<InventorySnapshot>.Filter.And(
             Builders<InventorySnapshot>.Filter.In(x => x.ProdutoId, productIds),
             Builders<InventorySnapshot>.Filter.In(x => x.DepositoId, stockIds),
-            Builders<InventorySnapshot>.Filter.Lte(x => x.DataFechamento, referenceDate)
+            Builders<InventorySnapshot>.Filter.Lte(x => x.DataFechamento, closingDate)
         );
 
         var snapshots = await collection
