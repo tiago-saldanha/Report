@@ -144,7 +144,10 @@ public class SnapshotApplicationService(
 
             await Parallel.ForEachAsync(depositIds, options, async (depositId, ct) =>
             {
-                var snapshots = CalculateSnapshots(product.Id, depositId, stockIns, stockOuts);
+                var filteredIns = stockIns.Where(x => x.DepositoID == depositId);
+                var filteredOuts = stockOuts.Where(x => x.DepositoID == depositId);
+
+                var snapshots = CalculateSnapshots(product.Id, depositId, filteredIns, filteredOuts);
 
                 if (snapshots.Count != 0)
                 {
@@ -172,12 +175,9 @@ public class SnapshotApplicationService(
         IEnumerable<StockIn> allStockIns,
         IEnumerable<StockOut> allStockOuts)
     {
-        var filteredIns = allStockIns.Where(x => x.DepositoID == depositId);
-        var filteredOuts = allStockOuts.Where(x => x.DepositoID == depositId);
-
-        var allMovements = filteredIns
+        var allMovements = allStockIns
             .Select(i => new { i.Data, Quantidade = (double)i.Quantidade })
-            .Concat(filteredOuts.Select(o => new { o.Data, Quantidade = (double)-o.Quantidade }));
+            .Concat(allStockOuts.Select(o => new { o.Data, Quantidade = (double)-o.Quantidade }));
 
         var monthlyGroups = allMovements
             .GroupBy(x => new { x.Data.Year, x.Data.Month })
